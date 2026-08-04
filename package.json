@@ -1,0 +1,9 @@
+{
+  "name": "randong-go",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "npm install --prefix server && npx tsx server/src/index.ts",
+    "build": "echo 'Using pre-built frontend'"
+  }
+}

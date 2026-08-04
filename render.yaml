@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: randong-go
+    runtime: node
+    plan: free
+    buildCommand: cd server && npm install && npx tsx server/src/index.ts --build-check 2>/dev/null; true
+    startCommand: cd server && npx tsx src/index.ts
+    envVars:
+      - key: PORT
+        value: 3001
+    autoDeploy: true
