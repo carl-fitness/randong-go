@@ -1,0 +1,56 @@
+name: Deploy to Render
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get Render Owner ID
+        id: owner
+        run: |
+          RESP=$(curl -s -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Accept: application/json" \
+            https://api.render.com/v1/owners)
+          echo "Response: $RESP"
+          OWNER_ID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['id'])")
+          echo "owner_id=$OWNER_ID" >> $GITHUB_OUTPUT
+          echo "Owner ID: $OWNER_ID"
+
+      - name: Create Web Service
+        id: create
+        run: |
+          RESP=$(curl -s -X POST https://api.render.com/v1/services \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json" \
+            -d '{
+              "type": "web_service",
+              "name": "randong-go",
+              "ownerId": "${{ steps.owner.outputs.owner_id }}",
+              "repo": "https://github.com/carl-fitness/randong-go",
+              "branch": "main",
+              "autoDeploy": "yes",
+              "serviceDetails": {
+                "env": "node",
+                "plan": "free",
+                "buildCommand": "cd server && npm install",
+                "startCommand": "cd server && npx tsx src/index.ts",
+                "envVars": [{"key": "PORT", "value": "3001"}]
+              }
+            }')
+          echo "Response: $RESP"
+          SERVICE_ID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+          echo "service_id=$SERVICE_ID" >> $GITHUB_OUTPUT
+          URL=$(echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('serviceDetails',{}).get('url','unknown'))")
+          echo "URL: $URL"
+
+      - name: Show Deploy URL
+        run: |
+          echo "============================================"
+          echo "  部署成功！"
+          echo "  网站地址: https://randong-go.onrender.com"
+          echo "============================================"
