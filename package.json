@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "npm install --prefix server && npx tsx server/src/index.ts",
-    "build": "echo 'Using pre-built frontend'"
+    "build": "cd server && npm install",
+    "start": "cd server && npx tsx src/index.ts"
+  },
+  "dependencies": {
+    "tsx": "^4.19.0"
   }
 }
