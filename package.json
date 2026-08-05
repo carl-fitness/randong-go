@@ -5,5 +5,11 @@
   "scripts": {
     "build": "cd server && npm install",
     "start": "cd server && npm install && npx tsx src/index.ts"
+  },
+  "dependencies": {
+    "pg": "^8.12.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.0"
   }
 }
