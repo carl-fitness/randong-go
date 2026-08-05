@@ -6,7 +6,7 @@ import { authenticate } from '../middleware/auth.js';
 const router = Router();
 
 // Get my check-ins (with optional date range)
-router.get('/', authenticate, (req: Request, res: Response): void => {
+router.get('/', authenticate, async (req: Request, res: Response): Promise<void> => {
   const { start, end, limit } = req.query;
 
   let sql = 'SELECT * FROM checkins WHERE user_id = ?';
@@ -27,12 +27,12 @@ router.get('/', authenticate, (req: Request, res: Response): void => {
     params.push(Number(limit));
   }
 
-  const checkins = db.prepare(sql).all(...params);
+  const checkins = await db.prepare(sql).all(...params);
   res.json({ checkins });
 });
 
 // Create check-in
-router.post('/', authenticate, (req: Request, res: Response): void => {
+router.post('/', authenticate, async (req: Request, res: Response): Promise<void> => {
   const { exercise_type, duration, mood, weight, photo_data } = req.body;
 
   if (!exercise_type || !duration || !mood) {
@@ -43,24 +43,24 @@ router.post('/', authenticate, (req: Request, res: Response): void => {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO checkins (id, user_id, exercise_type, duration, mood, weight, photo_data, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, req.user!.userId, exercise_type, duration, mood, weight || null, photo_data || null, now);
 
-  const checkin = db.prepare('SELECT * FROM checkins WHERE id = ?').get(id);
+  const checkin = await db.prepare('SELECT * FROM checkins WHERE id = ?').get(id);
   res.status(201).json({ checkin });
 });
 
 // Delete check-in
-router.delete('/:id', authenticate, (req: Request, res: Response): void => {
-  const checkin = db.prepare('SELECT * FROM checkins WHERE id = ? AND user_id = ?').get(req.params.id, req.user!.userId) as any;
+router.delete('/:id', authenticate, async (req: Request, res: Response): Promise<void> => {
+  const checkin = await db.prepare('SELECT * FROM checkins WHERE id = ? AND user_id = ?').get(req.params.id, req.user!.userId) as any;
   if (!checkin) {
     res.status(404).json({ error: '打卡记录不存在' });
     return;
   }
 
-  db.prepare('DELETE FROM checkins WHERE id = ?').run(req.params.id);
+  await db.prepare('DELETE FROM checkins WHERE id = ?').run(req.params.id);
   res.json({ success: true });
 });
 

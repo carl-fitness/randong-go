@@ -7,7 +7,7 @@ import { generateToken, authenticate } from '../middleware/auth.js';
 const router = Router();
 
 // Register
-router.post('/register', (req: Request, res: Response): void => {
+router.post('/register', async (req: Request, res: Response): Promise<void> => {
   const { username, password } = req.body;
 
   if (!username || !password) {
@@ -25,7 +25,7 @@ router.post('/register', (req: Request, res: Response): void => {
     return;
   }
 
-  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+  const existing = await db.prepare('SELECT id FROM users WHERE username = ?').get(username);
   if (existing) {
     res.status(409).json({ error: '用户名已被注册' });
     return;
@@ -33,8 +33,9 @@ router.post('/register', (req: Request, res: Response): void => {
 
   const id = crypto.randomUUID();
   const passwordHash = bcrypt.hashSync(password, 10);
+  const now = new Date().toISOString();
 
-  db.prepare('INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)').run(id, username, passwordHash);
+  await db.prepare('INSERT INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)').run(id, username, passwordHash, now);
 
   const token = generateToken({ userId: id, username });
   res.status(201).json({
@@ -44,7 +45,7 @@ router.post('/register', (req: Request, res: Response): void => {
 });
 
 // Login
-router.post('/login', (req: Request, res: Response): void => {
+router.post('/login', async (req: Request, res: Response): Promise<void> => {
   const { username, password } = req.body;
 
   if (!username || !password) {
@@ -52,7 +53,7 @@ router.post('/login', (req: Request, res: Response): void => {
     return;
   }
 
-  const user = db.prepare('SELECT id, username, password_hash FROM users WHERE username = ?').get(username) as any;
+  const user = await db.prepare('SELECT id, username, password_hash FROM users WHERE username = ?').get(username) as any;
   if (!user) {
     res.status(401).json({ error: '用户名或密码错误' });
     return;
@@ -71,8 +72,8 @@ router.post('/login', (req: Request, res: Response): void => {
 });
 
 // Get current user
-router.get('/me', authenticate, (req: Request, res: Response): void => {
-  const user = db.prepare('SELECT id, username, created_at FROM users WHERE id = ?').get(req.user!.userId) as any;
+router.get('/me', authenticate, async (req: Request, res: Response): Promise<void> => {
+  const user = await db.prepare('SELECT id, username, created_at FROM users WHERE id = ?').get(req.user!.userId) as any;
   if (!user) {
     res.status(404).json({ error: '用户不存在' });
     return;
