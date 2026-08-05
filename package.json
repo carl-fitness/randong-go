@@ -2,14 +2,14 @@
   "name": "randong-go",
   "version": "1.0.0",
   "private": true,
-  "scripts": {
-    "build": "cd server && npm install",
-    "start": "cd server && npm install && npx tsx src/index.ts"
-  },
   "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
     "pg": "^8.12.0"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.7",
     "@types/pg": "^8.11.0"
   }
 }
