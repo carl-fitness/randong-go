@@ -1,6 +1,5 @@
 server/
 dist-build/
-public/
 render.yaml
 package-lock.json
 .gitignore
