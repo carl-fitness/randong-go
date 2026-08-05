@@ -10,7 +10,7 @@ const pool = new Pool({
 
 const JWT_SECRET = process.env.JWT_SECRET || 'randong-go-secret-key-2026';
 
-// ── Helpers ──────────────────────────────────────────────
+// ── Auth helper ──────────────────────────────────────────
 function auth(req: VercelRequest) {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) return null;
@@ -19,77 +19,91 @@ function auth(req: VercelRequest) {
   } catch { return null; }
 }
 
+// ── DB init (runs once globally) ─────────────────────────
+let dbInitPromise: Promise<void> | null = null;
 async function initDB() {
-  const client = await pool.connect();
-  try {
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        username VARCHAR(50) UNIQUE NOT NULL,
-        password_hash VARCHAR(255) NOT NULL,
-        display_name VARCHAR(100),
-        avatar_url TEXT,
-        is_admin BOOLEAN DEFAULT FALSE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS checkins (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        date VARCHAR(10) NOT NULL,
-        exercise_type VARCHAR(50),
-        duration INTEGER,
-        notes TEXT,
-        weight NUMERIC(5,2),
-        photo_url TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS friends (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        friend_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        status VARCHAR(20) DEFAULT 'pending',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(user_id, friend_id)
-      )
-    `);
-    await client.query(`
-      INSERT INTO users (username, password_hash, display_name, is_admin)
-      SELECT 'admin', $1, '管理员', TRUE
-      WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = 'admin')
-    `, [await bcrypt.hash('admin123', 10)]);
-  } finally { client.release(); }
+  if (dbInitPromise) return dbInitPromise;
+  dbInitPromise = (async () => {
+    const client = await pool.connect();
+    try {
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS users (
+          id SERIAL PRIMARY KEY,
+          username VARCHAR(50) UNIQUE NOT NULL,
+          password_hash VARCHAR(255) NOT NULL,
+          display_name VARCHAR(100),
+          avatar_url TEXT,
+          is_admin BOOLEAN DEFAULT FALSE,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS checkins (
+          id SERIAL PRIMARY KEY,
+          user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+          date VARCHAR(10) NOT NULL,
+          exercise_type VARCHAR(50),
+          duration INTEGER,
+          notes TEXT,
+          weight NUMERIC(5,2),
+          photo_url TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS friends (
+          id SERIAL PRIMARY KEY,
+          user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+          friend_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+          status VARCHAR(20) DEFAULT 'pending',
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(user_id, friend_id)
+        )
+      `);
+      const adminExists = await client.query("SELECT 1 FROM users WHERE username='admin'");
+      if (adminExists.rowCount === 0) {
+        await client.query(
+          "INSERT INTO users (username, password_hash, display_name, is_admin) VALUES ($1,$2,$3,$4)",
+          ['admin', await bcrypt.hash('admin123', 10), '管理员', true]
+        );
+      }
+    } finally { client.release(); }
+  })();
+  return dbInitPromise;
 }
 
-// ── Routes ───────────────────────────────────────────────
+// ── Handler ──────────────────────────────────────────────
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  await initDB();
-
   const url = req.url || '/';
   const method = req.method || 'GET';
   const body = req.body || {};
 
-  // /api/health
+  // Health check (no DB needed)
   if (url === '/api/health' || url === '/health') {
     return res.json({ status: 'ok', time: new Date().toISOString() });
   }
 
-  // /api/auth/register
+  // Init DB before API calls
+  try {
+    await initDB();
+  } catch (e: any) {
+    console.error('DB init failed:', e.message);
+    return res.status(500).json({ error: 'Database initialization failed', detail: e.message });
+  }
+
+  // Auth routes
   if (url === '/api/auth/register' && method === 'POST') {
     const { username, password, displayName } = body;
     if (!username || !password) return res.status(400).json({ error: '缺少用户名或密码' });
     const hash = await bcrypt.hash(password, 10);
     try {
       const r = await pool.query(
-        'INSERT INTO users (username, password_hash, display_name) VALUES ($1, $2, $3) RETURNING id, username, display_name',
+        'INSERT INTO users (username, password_hash, display_name) VALUES ($1,$2,$3) RETURNING id, username, display_name',
         [username, hash, displayName || username]
       );
       return res.json({ id: r.rows[0].id, username: r.rows[0].username, displayName: r.rows[0].display_name });
@@ -99,7 +113,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  // /api/auth/login
   if (url === '/api/auth/login' && method === 'POST') {
     const { username, password } = body;
     const r = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
@@ -110,7 +123,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.json({ token, user: { id: r.rows[0].id, username: r.rows[0].username, displayName: r.rows[0].display_name, isAdmin: r.rows[0].is_admin } });
   }
 
-  // /api/auth/me
   if (url === '/api/auth/me' && method === 'GET') {
     const u = auth(req);
     if (!u) return res.status(401).json({ error: '未登录' });
@@ -118,7 +130,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.json(r.rows[0]);
   }
 
-  // /api/checkins
+  // Checkins
   if (url === '/api/checkins' && method === 'GET') {
     const u = auth(req);
     if (!u) return res.status(401).json({ error: '未登录' });
@@ -143,7 +155,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.json({ success: true });
   }
 
-  // /api/friends
+  // Friends
   if (url === '/api/friends' && method === 'GET') {
     const u = auth(req);
     if (!u) return res.status(401).json({ error: '未登录' });
@@ -167,7 +179,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.json({ success: true });
   }
 
-  // /api/admin/summary
+  // Admin
   if (url === '/api/admin/summary' && method === 'GET') {
     const u = auth(req);
     if (!u?.isAdmin) return res.status(403).json({ error: '无权限' });
@@ -176,16 +188,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const wc = await pool.query('SELECT COUNT(*) FROM checkins WHERE weight IS NOT NULL');
     return res.json({ totalUsers: parseInt(uc.rows[0].count), totalCheckins: parseInt(cc.rows[0].count), totalWeightRecords: parseInt(wc.rows[0].count) });
   }
-
-  // /api/admin/users
   if (url === '/api/admin/users' && method === 'GET') {
     const u = auth(req);
     if (!u?.isAdmin) return res.status(403).json({ error: '无权限' });
     const r = await pool.query('SELECT id, username, display_name, created_at FROM users ORDER BY created_at DESC');
     return res.json(r.rows);
   }
-
-  // /api/admin/checkins
   if (url === '/api/admin/checkins' && method === 'GET') {
     const u = auth(req);
     if (!u?.isAdmin) return res.status(403).json({ error: '无权限' });
