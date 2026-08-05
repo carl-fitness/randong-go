@@ -1,5 +1,4 @@
 // Vercel serverless entry point
-// All requests are routed here; Express handles API + static + SPA fallback
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -13,7 +12,6 @@ import adminRoutes from '../server/src/routes/admin.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
-// ─── Middleware ────────────────────────────────────────
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
@@ -21,10 +19,9 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '10mb' }));
 
-// ─── DB Init ───────────────────────────────────────────
-// Initialize tables on first request
+// DB Init
 let dbReady = false;
-app.use(async (_req, _res, next) => {
+app.use(async (_req: any, _res: any, next: any) => {
   if (!dbReady) {
     await initDB();
     dbReady = true;
@@ -32,19 +29,19 @@ app.use(async (_req, _res, next) => {
   next();
 });
 
-// ─── API Routes ────────────────────────────────────────
+// API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/checkins', checkinRoutes);
 app.use('/api/friends', friendRoutes);
 app.use('/api/admin', adminRoutes);
-app.get('/api/health', (_req, res) => {
+app.get('/api/health', (_req: any, res: any) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
-// ─── Static Files (React build) ────────────────────────
+// Static Files (React build)
 const distPath = path.join(__dirname, '..', 'dist-build');
 app.use(express.static(distPath));
-app.get('*', (_req, res) => {
+app.get('*', (_req: any, res: any) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 

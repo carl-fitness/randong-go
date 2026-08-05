@@ -1,4 +1,4 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }],
-  "installCommand": "cd server && npm install"
+  "buildCommand": "cd server && npm install",
+  "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]
 }
